@@ -44,14 +44,19 @@ ADC_HandleTypeDef hadc1;
 
 /* USER CODE BEGIN PV */
 
+// Змінна для накопичення суми значень АЦП (необхідна для подальшого усереднення)
 uint32_t adc_sum = 0;
 
+// Поточний лічильник виконаних вимірювань (інкрементується при кожному спрацюванні преривання)
 uint32_t samples_count = 0;
 
+// Цільова кількість вимірювань, за якою буде проведено розрахунок середнього значення
 uint32_t sample_count_target = 100;
 
+// Розрахована фізична напруга у Вольтах (результат перетворення цифрового коду в аналогову величину)
 float voltage = 0.0f;
 
+// Середнє арифметичне значення коду АЦП після проведення серії вимірювань (фільтроване значення)
 float avg_adc = 0.0f;
 
 /* USER CODE END PV */
@@ -243,16 +248,25 @@ static void MX_GPIO_Init(void)
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
+  // Перевірка, що переривання надійшло саме від модуля ADC1
   if(hadc->Instance == ADC1)
   {
-    adc_sum += HAL_ADC_GetValue(hadc);
-    samples_count++;
 
+
+    adc_sum += HAL_ADC_GetValue(hadc); // Отримуємо результат поточного вимірювання (0-4095) та додаємо до загальної суми
+    samples_count++; // Інкрементуємо лічильник отриманих зразків
+
+    // Перевіряємо, чи ми вже накопичили потрібну кількість замірів (sample_count_target = 100)
     if (samples_count >= sample_count_target)
     {
+      // 1. Обчислюємо середнє арифметичне значення (фільтрація шумів)
       avg_adc = (float)adc_sum / (float)sample_count_target;
+
+      // 2. Перераховуємо цифрове значення у реальну напругу у вольтах
+      // Використовуємо 3.3V як опорну напругу та 4095 як макс. значення для 12-біт
       voltage = (avg_adc * 3.3f) / 4095.0f;
 
+      // Логіка порівняння середнього значення з пороговим (середина шкали 2048)
       if (avg_adc < 2048.0f)
       {
         HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
@@ -264,10 +278,12 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
         HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
       }
 
+      // Скидаємо суму та лічильник для початку нового циклу накопичення даних
       adc_sum = 0;
       samples_count = 0;
     }
 
+    // Перезапускаємо АЦП в режимі переривань для наступного циклу вимірювання
     HAL_ADC_Start_IT(hadc);
   }
 }
